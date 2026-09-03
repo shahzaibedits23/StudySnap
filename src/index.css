@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer utilities {
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+@layer components {
+  .markdown-body p {
+    @apply mb-3.5 text-gray-700 dark:text-gray-300 text-sm sm:text-base leading-relaxed;
+  }
+  .markdown-body ul {
+    @apply list-disc pl-5 mb-4 space-y-2 text-gray-700 dark:text-gray-300 text-sm sm:text-base;
+  }
+  .markdown-body ol {
+    @apply list-decimal pl-5 mb-4 space-y-3 text-gray-700 dark:text-gray-300 text-sm sm:text-base;
+  }
+  .markdown-body li {
+    @apply text-gray-700 dark:text-gray-300 leading-relaxed pl-1;
+  }
+  .markdown-body li::marker {
+    @apply font-bold text-blue-600 dark:text-blue-400;
+  }
+  .markdown-body strong {
+    @apply font-bold text-gray-900 dark:text-white tracking-tight;
+  }
+  .markdown-body h1 {
+    @apply font-bold text-xl sm:text-2xl text-gray-900 dark:text-white mt-5 mb-2.5 tracking-tight;
+  }
+  .markdown-body h2 {
+    @apply font-bold text-lg sm:text-xl text-gray-900 dark:text-white mt-4 mb-2 tracking-tight;
+  }
+  .markdown-body h3 {
+    @apply font-semibold text-base sm:text-lg text-gray-900 dark:text-white mt-3.5 mb-1.5;
+  }
+  .markdown-body code {
+    @apply bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded-md text-xs sm:text-sm font-mono border border-blue-100 dark:border-blue-900/60;
+  }
+  .markdown-body pre {
+    @apply bg-gray-900 dark:bg-gray-950 text-gray-100 p-4 rounded-xl overflow-x-auto my-3.5 border border-gray-800 font-mono text-xs sm:text-sm shadow-xs;
+  }
+  .markdown-body pre code {
+    @apply bg-transparent text-inherit p-0 border-none font-mono text-xs sm:text-sm;
+  }
+  .markdown-body blockquote {
+    @apply border-l-4 border-blue-500 dark:border-blue-400 bg-blue-50/60 dark:bg-blue-950/30 pl-4 py-2.5 pr-3 my-3.5 rounded-r-xl italic text-gray-700 dark:text-gray-300 text-sm leading-relaxed;
+  }
+  .markdown-body table {
+    @apply w-full border-collapse my-3.5 text-xs sm:text-sm rounded-xl overflow-hidden;
+  }
+  .markdown-body th {
+    @apply bg-gray-100 dark:bg-gray-800 font-semibold text-gray-800 dark:text-gray-200 text-left p-2.5 border border-gray-200 dark:border-gray-700;
+  }
+  .markdown-body td {
+    @apply p-2.5 border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300;
+  }
+  .markdown-body hr {
+    @apply my-4 border-gray-200 dark:border-gray-800;
+  }
+}

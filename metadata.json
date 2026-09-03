@@ -1,0 +1,10 @@
+{
+  "name": "StudySnap AI",
+  "description": "An AI-powered study assistant that helps students understand questions and visual diagrams by scanning images or entering text.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

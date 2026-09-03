@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function uidUnchanged() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == resource.data.userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidNote(data) {
+      return data.userId is string &&
+             data.id is string &&
+             data.timestamp is number &&
+             data.explanation is string &&
+             data.stepByStep is string &&
+             data.eli10 is string &&
+             data.quizzes is list &&
+             data.relatedTopics is list &&
+             (!('directAnswer' in data) || data.directAnswer is string) &&
+             (!('keyTakeaways' in data) || data.keyTakeaways is list) &&
+             (!('commonMistakes' in data) || data.commonMistakes is string) &&
+             (!('questionText' in data) || data.questionText is string) &&
+             (!('questionImage' in data) || data.questionImage is string) &&
+             (!('diagram' in data) || data.diagram is map) &&
+             (!('searchSources' in data) || data.searchSources is list) &&
+             (!('searchQueries' in data) || data.searchQueries is list) &&
+             data.explanation.size() < 100000 &&
+             data.stepByStep.size() < 100000 &&
+             data.eli10.size() < 100000;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    match /notes/{noteId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && 
+                    request.resource.data.userId == request.auth.uid && 
+                    hasRequiredFields(['id', 'userId', 'timestamp', 'explanation', 'stepByStep', 'eli10', 'quizzes', 'relatedTopics']) &&
+                    isValidNote(request.resource.data);
+      allow update: if isAuthenticated() && 
+                    isDocOwner() && 
+                    uidNotModified() &&
+                    isValidNote(request.resource.data);
+      allow delete: if isAuthenticated() && isDocOwner();
+    }
+  }
+}
