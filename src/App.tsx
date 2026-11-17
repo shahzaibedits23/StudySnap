@@ -1,17 +1,17 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, Suspense, lazy } from 'react';
 import { 
   Camera, Type as TypeIcon, BookOpen, ChevronLeft, Share2, Save, CheckCircle, Circle, 
-  Loader2, Image as ImageIcon, Trash2, ArrowRight, LogOut, Lightbulb, Sun, Moon, 
+  Loader2, Image as ImageIcon, Trash2, ArrowRight, Lightbulb, Sun, Moon, 
   Search, X, Sparkles, Copy, Check, Volume2, VolumeX, AlertTriangle, RotateCcw, 
   CheckCircle2, Award, Compass, HelpCircle, ArrowUpRight, GitFork
 } from 'lucide-react';
-import { MermaidDiagram } from './components/MermaidDiagram';
+const MermaidDiagram = lazy(() =>
+  import('./components/MermaidDiagram').then((m) => ({ default: m.MermaidDiagram }))
+);
 import { analyzeQuestion } from './services/geminiService';
 import { saveNote, getNotes, deleteNote } from './services/storageService';
 import { Note, Quiz, ViewState } from './types';
 import { motion, AnimatePresence } from 'motion/react';
-import { auth, signInWithGoogle, logOut } from './firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -21,8 +21,6 @@ export default function App() {
   const [currentResult, setCurrentResult] = useState<Note | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [selectedNote, setSelectedNote] = useState<Note | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [isAuthReady, setIsAuthReady] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
 
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
@@ -51,34 +49,7 @@ export default function App() {
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setIsAuthReady(true);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  const handleLogin = async () => {
-    try {
-      await signInWithGoogle();
-    } catch (error) {
-      console.error(error);
-      showToast("Failed to sign in.", "error");
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await logOut();
-      setNotes([]);
-      setView('home');
-    } catch (error) {
-      console.error(error);
-    }
+    setTimeout(() => setToast(null), type === 'error' ? 6000 : 3000);
   };
 
   const handleGoHome = () => {
@@ -88,33 +59,40 @@ export default function App() {
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    e.target.value = '';
     if (!file) return;
 
     setView('loading');
     setLoadingText('Processing image...');
 
     const reader = new FileReader();
+    reader.onerror = () => {
+      showToast("Failed to read image file. Please try another image.", "error");
+      setView('home');
+    };
     reader.onloadend = () => {
       const base64 = reader.result as string;
-      const mimeType = file.type;
       
       const img = new Image();
-      img.src = base64;
+      img.onerror = () => {
+        showToast("Unsupported or corrupted image file. Please try a JPG or PNG image.", "error");
+        setView('home');
+      };
       img.onload = async () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800;
-        const MAX_HEIGHT = 800;
+        const MAX_WIDTH = 768;
+        const MAX_HEIGHT = 768;
         let width = img.width;
         let height = img.height;
 
         if (width > height) {
           if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
+            height = Math.round(height * (MAX_WIDTH / width));
             width = MAX_WIDTH;
           }
         } else {
           if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
+            width = Math.round(width * (MAX_HEIGHT / height));
             height = MAX_HEIGHT;
           }
         }
@@ -124,27 +102,31 @@ export default function App() {
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
         
-        const compressedBase64 = canvas.toDataURL(mimeType, 0.7);
+        const targetMime = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+        const compressedBase64 = canvas.toDataURL(targetMime, 0.72);
+        const actualMimeType = compressedBase64.match(/^data:([^;]+);/)?.[1] || 'image/jpeg';
 
         setLoadingText('Analyzing image...');
         
         try {
-          const result = await analyzeQuestion(undefined, compressedBase64, mimeType);
+          const result = await analyzeQuestion(undefined, compressedBase64, actualMimeType);
           const newNote: Note = {
             id: Date.now().toString(),
             timestamp: Date.now(),
             questionImage: compressedBase64,
-            userId: user?.uid || 'anonymous',
+            userId: 'guest',
             ...result
           };
           setCurrentResult(newNote);
           setView('result');
-        } catch (error) {
+        } catch (error: any) {
           console.error(error);
-          showToast("Failed to analyze image. Please try again.", "error");
+          const msg = error?.message || "Failed to analyze image. Please try again.";
+          showToast(msg, "error");
           setView('home');
         }
       };
+      img.src = base64;
     };
     reader.readAsDataURL(file);
   };
@@ -161,23 +143,20 @@ export default function App() {
         id: Date.now().toString(),
         timestamp: Date.now(),
         questionText: text,
-        userId: user?.uid || 'anonymous',
+        userId: 'guest',
         ...result
       };
       setCurrentResult(newNote);
       setView('result');
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      showToast("Failed to analyze text. Please try again.", "error");
+      const msg = error?.message || "Failed to analyze text. Please try again.";
+      showToast(msg, "error");
       setView('home');
     }
   };
 
   const handleSaveNote = async () => {
-    if (!user) {
-      showToast("Please sign in to save notes.", "error");
-      return;
-    }
     if (currentResult) {
       try {
         await saveNote(currentResult);
@@ -190,12 +169,6 @@ export default function App() {
   };
 
   const handleOpenNotes = async () => {
-    if (!user) {
-      showToast("Please sign in to view notes.", "error");
-      return;
-    }
-    setView('loading');
-    setLoadingText('Loading notes...');
     try {
       const fetchedNotes = await getNotes();
       setNotes(fetchedNotes);
@@ -203,41 +176,8 @@ export default function App() {
     } catch (error) {
       console.error(error);
       showToast("Failed to load notes.", "error");
-      setView('home');
     }
   };
-
-  if (!isAuthReady) {
-    return (
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-950 flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-      </div>
-    );
-  }
-
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-950 flex justify-center transition-colors duration-200">
-        <div className="w-full max-w-md bg-white dark:bg-gray-900 min-h-screen shadow-2xl flex flex-col items-center justify-center p-6 border-x dark:border-gray-800 relative">
-          <div className="absolute top-5 right-5">
-            <ThemeToggleButton theme={theme} onToggle={toggleTheme} />
-          </div>
-          <div className="w-20 h-20 bg-blue-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg shadow-blue-500/20">
-            <BookOpen className="w-10 h-10 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 tracking-tight">StudySnap AI</h1>
-          <p className="text-gray-500 dark:text-gray-400 mb-10 text-center">Sign in to save your notes, generate quizzes, and access your study history across devices.</p>
-          <button 
-            onClick={handleLogin}
-            className="w-full bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 hover:border-blue-600 dark:hover:border-blue-500 text-gray-800 dark:text-gray-100 p-4 rounded-2xl flex items-center justify-center shadow-sm transition-all active:scale-95 cursor-pointer font-semibold"
-          >
-            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-6 h-6 mr-3" />
-            Sign in with Google
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-gray-100 font-sans flex justify-center transition-colors duration-200">
@@ -260,10 +200,8 @@ export default function App() {
           {view === 'home' && (
             <HomeView 
               key="home"
-              user={user}
               theme={theme}
               onToggleTheme={toggleTheme}
-              onLogout={handleLogout}
               onScanClick={() => fileInputRef.current?.click()}
               onTextClick={() => setView('text_input')}
               onNotesClick={handleOpenNotes}
@@ -355,7 +293,7 @@ function ThemeToggleButton({ theme, onToggle }: { theme: 'light' | 'dark', onTog
   );
 }
 
-function HomeView({ user, theme, onToggleTheme, onLogout, onScanClick, onTextClick, onNotesClick }: { user: User, theme: 'light' | 'dark', onToggleTheme: () => void, onLogout: () => void, onScanClick: () => void, onTextClick: () => void, onNotesClick: () => void }) {
+function HomeView({ theme, onToggleTheme, onScanClick, onTextClick, onNotesClick }: { theme: 'light' | 'dark', onToggleTheme: () => void, onScanClick: () => void, onTextClick: () => void, onNotesClick: () => void }) {
   const [onboardingStep, setOnboardingStep] = useState(0);
 
   useEffect(() => {
@@ -401,28 +339,16 @@ function HomeView({ user, theme, onToggleTheme, onLogout, onScanClick, onTextCli
 
       <div className="flex justify-between items-center mb-8 relative z-10">
         <div className="flex items-center">
-          {user.photoURL ? (
-            <img src={user.photoURL} alt="Profile" className="w-10 h-10 rounded-full border-2 border-blue-100 dark:border-blue-900" referrerPolicy="no-referrer" />
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-950/80 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold">
-              {user.displayName?.charAt(0) || 'U'}
-            </div>
-          )}
+          <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-950/80 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold shadow-xs">
+            <BookOpen className="w-5 h-5" />
+          </div>
           <div className="ml-3">
-            <p className="text-xs text-gray-500 dark:text-gray-400">Welcome back,</p>
-            <p className="text-sm font-semibold text-gray-900 dark:text-white truncate max-w-[140px]">{user.displayName || 'Student'}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Welcome to</p>
+            <p className="text-sm font-semibold text-gray-900 dark:text-white">StudySnap AI</p>
           </div>
         </div>
         <div className="flex items-center space-x-1">
           <ThemeToggleButton theme={theme} onToggle={onToggleTheme} />
-          <button 
-            onClick={onLogout} 
-            aria-label="Logout"
-            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-full transition-colors cursor-pointer"
-            title="Log out"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
         </div>
       </div>
 
@@ -433,8 +359,8 @@ function HomeView({ user, theme, onToggleTheme, onLogout, onScanClick, onTextCli
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2 tracking-tight">StudySnap AI</h1>
         <p className="text-gray-500 dark:text-gray-400">Your personal AI study assistant</p>
         <div className="inline-flex items-center gap-1.5 px-3 py-1 mt-3 rounded-full bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-[11px] font-semibold text-sky-700 dark:text-sky-300 shadow-2xs">
-          <Search className="w-3 h-3 text-sky-500" />
-          <span>Grounded with Google Search • Gemini 3.5</span>
+          <Sparkles className="w-3 h-3 text-sky-500" />
+          <span>Instant Explanations • Visual Diagrams • Quizzes</span>
         </div>
       </div>
 
@@ -544,8 +470,8 @@ function TextInputView({ theme, onToggleTheme, onBack, onSubmit }: { theme: 'lig
         <div className="flex items-center justify-between mb-3 px-1">
           <span className="text-xs font-semibold text-gray-500 dark:text-gray-400">Question or topic</span>
           <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-800 text-[10px] font-medium text-sky-700 dark:text-sky-300">
-            <Search className="w-2.5 h-2.5 text-sky-500" />
-            <span>Search Grounded</span>
+            <Sparkles className="w-2.5 h-2.5 text-sky-500" />
+            <span>AI Tutor Ready</span>
           </div>
         </div>
 
@@ -941,14 +867,21 @@ function ResultView({
             )}
 
             {activeTab === 'diagram' && note.diagram && (
-              <motion.div key="diagram" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}>
-                <MermaidDiagram 
-                  code={note.diagram.code}
-                  title={note.diagram.title}
-                  description={note.diagram.description}
-                  type={note.diagram.type}
-                  theme={theme}
-                />
+              <motion.div key="diagram" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.12 }}>
+                <Suspense fallback={
+                  <div className="bg-white dark:bg-gray-900 rounded-2xl p-8 shadow-sm border border-gray-100 dark:border-gray-800 flex items-center justify-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                    <Loader2 className="w-4 h-4 animate-spin text-blue-600" />
+                    <span>Loading diagram renderer...</span>
+                  </div>
+                }>
+                  <MermaidDiagram 
+                    code={note.diagram.code}
+                    title={note.diagram.title}
+                    description={note.diagram.description}
+                    type={note.diagram.type}
+                    theme={theme}
+                  />
+                </Suspense>
               </motion.div>
             )}
 
